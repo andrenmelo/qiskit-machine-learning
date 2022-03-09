@@ -14,7 +14,7 @@
 ad hoc dataset
 """
 
-from typing import Union, Tuple
+from typing import Tuple
 import itertools as it
 from functools import reduce
 import numpy as np
@@ -32,7 +32,7 @@ def ad_hoc_data(
     n,
     gap,
     one_hot=True,
-): -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     r"""Generates a toy dataset that can be fully separated with
     ``qiskit.circuit.library.ZZ_Feature_Map`` according to the procedure
     outlined in [1]. To construct the dataset, we first sample uniformly
@@ -111,9 +111,7 @@ def ad_hoc_data(
     d_m = np.diag((-1) ** np.array(bitstring_parity))
 
     # Construct random unitary by exponentiating a random hermitian matrix
-    basis = algorithm_globals.random.random(
-        (2 ** n, 2 ** n)
-    ) 
+    basis = algorithm_globals.random.random((2**n, 2**n))
     basis += basis.T.conj()
     basis = scipy.linalg.expm(1j * basis)
     m_m = basis.conj().T @ d_m @ basis
@@ -121,10 +119,13 @@ def ad_hoc_data(
     # Generate random points in the feature space and compute the expectation value of the parity
     # Keep the points if the absolute value of the expectation value exceeds the gap provided by
     # the user
-    ind_pairs = [[i, i+1] for i in range(n-1)]
+    ind_pairs = [[i, i + 1] for i in range(n - 1)]
     sample_total = []
     x_sample, y_sample = [], []
-    while y_sample.count(0) < training_size + test_size or y_sample.count(1) < training_size + test_size:
+    while (
+        y_sample.count(0) < training_size + test_size
+        or y_sample.count(1) < training_size + test_size
+    ):
         x = 2 * np.pi * algorithm_globals.random.random(n)
         phi = np.sum(x[:, None, None] * z_i, axis=0)
         phi += sum([(np.pi - x[i1]) * (np.pi - x[i2]) * z_i[i1] @ z_i[i2] for i1, i2 in ind_pairs])
