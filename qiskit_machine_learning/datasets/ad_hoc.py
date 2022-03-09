@@ -27,17 +27,12 @@ from qiskit_machine_learning.datasets.dataset_helper import (
 
 
 def ad_hoc_data(
-    training_size: int,
-    test_size: int,
-    n: int,
-    gap: int,
-    plot_data: bool = False,
-    one_hot: bool = True,
-    include_sample_total: bool = False,
-) -> Union[
-    Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray],
-    Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray],
-]:
+    training_size,
+    test_size,
+    n,
+    gap,
+    one_hot=True,
+): -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]
     r"""Generates a toy dataset that can be fully separated with
     ``qiskit.circuit.library.ZZ_Feature_Map`` according to the procedure
     outlined in [1]. To construct the dataset, we first sample uniformly
@@ -99,13 +94,6 @@ def ad_hoc_data(
         ValueError: if n is not 2 or 3.
     """
     class_labels = [r"A", r"B"]
-    count = 0
-    if n == 2:
-        count = 100
-    elif n == 3:
-        count = 20  # coarseness of data separation
-    else:
-        raise ValueError(f"Supported values of 'n' are 2 and 3 only, but {n} is provided.")
 
     # Define auxiliary matrices and initial state
     z = np.diag([1, -1])
@@ -119,47 +107,39 @@ def ad_hoc_data(
 
     # Construct the parity operator
     bitstrings = ["".join(bstring) for bstring in it.product(*[["0", "1"]] * n)]
-    if n == 2:
-        bitstring_parity = [bstr.count("1") % 2 for bstr in bitstrings]
-        d_m = np.diag((-1) ** np.array(bitstring_parity))
-    elif n == 3:
-        bitstring_majority = [0 if bstr.count("0") > 1 else 1 for bstr in bitstrings]
-        d_m = np.diag((-1) ** np.array(bitstring_majority))
+    bitstring_parity = [bstr.count("1") % 2 for bstr in bitstrings]
+    d_m = np.diag((-1) ** np.array(bitstring_parity))
 
-    # Generate a random unitary operator by collecting eigenvectors of a
-    # random hermitian operator
+    # Construct random unitary by exponentiating a random hermitian matrix
     basis = algorithm_globals.random.random(
-        (2**n, 2**n)
-    ) + 1j * algorithm_globals.random.random((2**n, 2**n))
-    basis = np.array(basis).conj().T @ np.array(basis)
-    eigvals, eigvecs = np.linalg.eig(basis)
-    idx = eigvals.argsort()[::-1]
-    eigvecs = eigvecs[:, idx]
-    m_m = eigvecs.conj().T @ d_m @ eigvecs
+        (2 ** n, 2 ** n)
+    ) 
+    basis += basis.T.conj()
+    basis = scipy.linalg.expm(1j * basis)
+    m_m = basis.conj().T @ d_m @ basis
 
-    # Generate a grid of points in the feature space and compute the
-    # expectation value of the parity
-    xvals = np.linspace(0, 2 * np.pi, count, endpoint=False)
-    ind_pairs = list(it.combinations(range(n), 2))
+    # Generate random points in the feature space and compute the expectation value of the parity
+    # Keep the points if the absolute value of the expectation value exceeds the gap provided by
+    # the user
+    ind_pairs = [[i, i+1] for i in range(n-1)]
     sample_total = []
-    for x in it.product(*[xvals] * n):
-        x = np.array(x)
+    x_sample, y_sample = [], []
+    while y_sample.count(0) < training_size + test_size or y_sample.count(1) < training_size + test_size:
+        x = 2 * np.pi * algorithm_globals.random.random(n)
         phi = np.sum(x[:, None, None] * z_i, axis=0)
         phi += sum([(np.pi - x[i1]) * (np.pi - x[i2]) * z_i[i1] @ z_i[i2] for i1, i2 in ind_pairs])
         u_u = scipy.linalg.expm(1j * phi)  # pylint: disable=no-member
         psi = u_u @ h_n @ u_u @ psi_0
         exp_val = np.real(psi.conj().T @ m_m @ psi)
-        if np.abs(exp_val) > gap:
-            sample_total.append(np.sign(exp_val))
-        else:
-            sample_total.append(0)
-    sample_total = np.array(sample_total).reshape(*[count] * n)
-
-    # Extract training and testing samples from grid
-    x_sample, y_sample = _sample_ad_hoc_data(sample_total, xvals, training_size + test_size, n)
-
-    if plot_data:
-        _plot_ad_hoc_data(x_sample, y_sample, training_size)
+        if exp_val < -gap and y_sample.count(0) < training_size + test_size:
+            x_sample.append(x)
+            y_sample.append(0)
+        if exp_val > gap and y_sample.count(1) < training_size + test_size:
+            x_sample.append(x)
+            y_sample.append(1)
+        if np.random.uniform() > 0.99:
+            print(y_sample.count(0), y_sample.count(1))
+    x_sample, y_sample = np.array(x_sample), np.array(y_sample)
 
     training_input = {
         key: (x_sample[y_sample == k, :])[:training_size] for k, key in enumerate(class_labels)
@@ -176,48 +156,9 @@ def ad_hoc_data(
         test_input, class_labels, one_hot
     )
 
-    if include_sample_total:
-        return (
-            training_feature_array,
-            training_label_array,
-            test_feature_array,
-            test_label_array,
-            sample_total,
-        )
-    else:
-        return (
-            training_feature_array,
-            training_label_array,
-            test_feature_array,
-            test_label_array,
-        )
-
-
-def _sample_ad_hoc_data(sample_total, xvals, num_samples, n):
-    count = sample_total.shape[0]
-    sample_a, sample_b = [], []
-    for i, sample_list in enumerate([sample_a, sample_b]):
-        label = 1 if i == 0 else -1
-        while len(sample_list) < num_samples:
-            draws = tuple(algorithm_globals.random.choice(count) for i in range(n))
-            if sample_total[draws] == label:
-                sample_list.append([xvals[d] for d in draws])
-
-    labels = np.array([0] * num_samples + [1] * num_samples)
-    samples = [sample_a, sample_b]
-    samples = np.reshape(samples, (2 * num_samples, n))
-    return samples, labels
-
-
-@optionals.HAS_MATPLOTLIB.require_in_call
-def _plot_ad_hoc_data(x_total, y_total, training_size):
-    import matplotlib.pyplot as plt
-
-    n = x_total.shape[1]
-    fig = plt.figure()
-    projection = "3d" if n == 3 else None
-    ax1 = fig.add_subplot(1, 1, 1, projection=projection)
-    for k in range(0, 2):
-        ax1.scatter(*x_total[y_total == k][:training_size].T)
-    ax1.set_title("Ad-hoc Data")
-    plt.show()
+    return (
+        training_feature_array,
+        training_label_array,
+        test_feature_array,
+        test_label_array,
+    )
