@@ -163,3 +163,34 @@ def ad_hoc_data(
         test_feature_array,
         test_label_array,
     )
+
+
+def _sample_ad_hoc_data(sample_total, xvals, num_samples, n):
+    count = sample_total.shape[0]
+    sample_a, sample_b = [], []
+    for i, sample_list in enumerate([sample_a, sample_b]):
+        label = 1 if i == 0 else -1
+        while len(sample_list) < num_samples:
+            draws = tuple(algorithm_globals.random.choice(count) for i in range(n))
+            if sample_total[draws] == label:
+                sample_list.append([xvals[d] for d in draws])
+
+    labels = np.array([0] * num_samples + [1] * num_samples)
+    samples = [sample_a, sample_b]
+    samples = np.reshape(samples, (2 * num_samples, n))
+    return samples, labels
+
+
+@optionals.HAS_MATPLOTLIB.require_in_call
+def _plot_ad_hoc_data(x_total, y_total, training_size):
+    import matplotlib.pyplot as plt
+
+    n = x_total.shape[1]
+    fig = plt.figure()
+    projection = "3d" if n == 3 else None
+    ax1 = fig.add_subplot(1, 1, 1, projection=projection)
+    for k in range(0, 2):
+        ax1.scatter(*x_total[y_total == k][:training_size].T)
+    ax1.set_title("Ad-hoc Data")
+    plt.show()
+>>>>>>> upstream/main
